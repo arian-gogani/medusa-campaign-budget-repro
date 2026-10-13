@@ -14,7 +14,7 @@ side by side.
 
 `output-at-146c46b0a.txt` is the output recorded on 2026-10-12 at that SHA.
 
-There are five more scripts. Each is independent of the others and none of them
+There are four more scripts. Each is independent of the others and none of them
 changes what `build.cjs repro.ts` does.
 
     cd ~/medusa-repro/repro && node build-tapped.cjs probe.ts
