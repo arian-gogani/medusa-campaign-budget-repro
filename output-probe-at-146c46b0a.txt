@@ -1,0 +1,81 @@
+
+==============================================================================
+PART A  every MathBN call the guard makes, with its real arguments
+==============================================================================
+Each block is one call to computeActionForBudgetExceeded(promotion, amount).
+The lines under it are the MathBN calls that call made, in order, with the
+arguments medusa's own code passed. Recorded, not retyped.
+
+call: type=spend limit=100 used=0 amount=150  ->  REFUSE (campaignBudgetExceeded)
+      MathBN.add(0, 150) = 150
+      MathBN.gt(150, 100) = true
+
+call: type=spend_by_attribute limit=100 used=0 amount=150  ->  PERMIT
+      MathBN.add(0, 1) = 1
+      MathBN.gt(1, 100) = false
+
+call: type=spend_by_attribute limit=100 used=37 amount=150  ->  PERMIT
+      MathBN.add(37, 1) = 38
+      MathBN.gt(38, 100) = false
+
+call: type=usage limit=100 used=0 amount=150  ->  PERMIT
+      MathBN.add(0, 1) = 1
+      MathBN.gt(1, 100) = false
+
+call: type=spend_by_attribute limit=0.5 used=0 amount=150  ->  REFUSE (campaignBudgetExceeded)
+      MathBN.add(0, 1) = 1
+      MathBN.gt(1, 0.5) = true
+
+==============================================================================
+PART B  does the offered discount change the verdict?
+==============================================================================
+Budget limit fixed at 100, used fixed at 0. Only `amount` varies.
+
+AMOUNT            spend                spend_by_attribute
+1                 PERMIT               PERMIT
+99                PERMIT               PERMIT
+100               PERMIT               PERMIT
+101               REFUSE               PERMIT
+1000              REFUSE               PERMIT
+1000000           REFUSE               PERMIT
+1000000000        REFUSE               PERMIT
+
+==============================================================================
+PART C  where is the refusal boundary for spend_by_attribute?
+==============================================================================
+For each `used`, the smallest limit that still PERMITs a 1,000,000
+discount is found by bisection on the real function. If the guard were
+comparing money it would depend on the 1,000,000. If it is comparing a
+count, the boundary sits at used + 1.
+
+USED     BOUNDARY (smallest permitting limit)   used + 1   MATCH
+0        1.00000000000                          1          yes
+1        2.00000000000                          2          yes
+5        6.00000000000                          6          yes
+37       38.0000000000                          38         yes
+99       100.000000000                          100        yes
+1000     1001.00000000                          1001       yes
+
+Same bisection on a plain `spend` budget, for contrast. Here the
+boundary should move with the discount, because the discount is what is
+being compared.
+
+AMOUNT        USED     BOUNDARY (smallest permitting limit)   used + amount
+150           0        150.000000000                          150
+150           37       187.000000000                          187
+1000000       0        1000000.00000                          1000000
+
+==============================================================================
+PART D  the boundary at used = 0, stated as two adjacent limits
+==============================================================================
+LIMIT                      AMOUNT            VERDICT
+0                          1000000           PERMIT
+1e-9                       1000000           REFUSE
+0.5                        1000000           REFUSE
+0.999999999                1000000           REFUSE
+1                          1000000           PERMIT
+1.000000001                1000000           PERMIT
+2                          1000000           PERMIT
+
+A limit of 1 permits a discount of 1,000,000. A limit of 0.999999999
+refuses it. The quantity on the left of the comparison is 1.

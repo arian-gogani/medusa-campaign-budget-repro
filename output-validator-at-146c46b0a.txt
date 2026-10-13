@@ -1,0 +1,69 @@
+
+==============================================================================
+POST /admin/campaigns  (validateAndTransformBody(AdminCreateCampaign))
+==============================================================================
+
+--- spend_by_attribute with an attribute
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id"}}
+    VERDICT: ACCEPTED
+    parsed:  {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id"}}
+
+--- spend_by_attribute with no attribute
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10}}
+    VERDICT: REJECTED
+    issue:   [budget.attribute] campaign budget attribute is required when budget type is USE_BY_ATTRIBUTE or SPEND_BY_ATTRIBUTE
+
+--- spend_by_attribute, no currency_code, limit 10
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_email"}}
+    VERDICT: ACCEPTED
+    parsed:  {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_email"}}
+
+--- spend_by_attribute with a currency_code too
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id","currency_code":"usd"}}
+    VERDICT: ACCEPTED
+    parsed:  {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_attribute","limit":10,"currency_code":"usd","attribute":"customer_id"}}
+
+--- CONTROL: a type that is not in the enum
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend_by_moonphase","limit":10,"attribute":"customer_id"}}
+    VERDICT: REJECTED
+    issue:   [budget.type] Invalid option: expected one of "spend"|"usage"|"use_by_attribute"|"spend_by_attribute"
+
+--- CONTROL: spend with no currency_code
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"spend","limit":10}}
+    VERDICT: REJECTED
+    issue:   [budget.currency_code] currency_code is required when budget type is spend
+
+--- CONTROL: use_by_attribute with an attribute
+    body:    {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"use_by_attribute","limit":2,"attribute":"customer_email"}}
+    VERDICT: ACCEPTED
+    parsed:  {"name":"Probe","campaign_identifier":"PROBE-1","budget":{"type":"use_by_attribute","limit":2,"attribute":"customer_email"}}
+
+==============================================================================
+POST /admin/campaigns/:id  (validateAndTransformBody(AdminUpdateCampaign))
+==============================================================================
+
+--- attempt to set budget.type on update
+    body:    {"budget":{"type":"spend_by_attribute","limit":10}}
+    VERDICT: REJECTED
+    issue:   [budget] Unrecognized key: "type"
+
+--- CONTROL: update only the limit
+    body:    {"budget":{"limit":10}}
+    VERDICT: ACCEPTED
+    parsed:  {"budget":{"limit":10}}
+
+==============================================================================
+POST /admin/promotions  (validateAndTransformBody(AdminCreatePromotion))
+==============================================================================
+CreatePromotion carries `campaign: CreateCampaign.optional()`, the same
+campaign schema, so this is a second route onto the same budget.
+
+--- promotion with a nested spend_by_attribute campaign
+    body:    {"code":"PROBE10","type":"standard","application_method":{"type":"percentage","target_type":"items","allocation":"each","value":50,"max_quantity":1},"campaign":{"name":"Probe","campaign_identifier":"PROBE-2","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id"}}}
+    VERDICT: ACCEPTED
+    parsed:  {"code":"PROBE10","type":"standard","status":"draft","campaign":{"name":"Probe","campaign_identifier":"PROBE-2","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id"}},"application_method":{"value":50,"max_quantity":1,"type":"percentage","target_type":"items","allocation":"each"}}
+
+--- CONTROL: nested campaign on promotion update
+    body:    {"campaign":{"name":"Probe","campaign_identifier":"PROBE-3","budget":{"type":"spend_by_attribute","limit":10,"attribute":"customer_id"}}}
+    VERDICT: REJECTED
+    issue:   [] Unrecognized key: "campaign"

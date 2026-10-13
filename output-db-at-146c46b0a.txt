@@ -1,0 +1,24 @@
+CREATE TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+--- the constraint as postgres now holds it ---
+               conname                |                                                    definition                                                    
+--------------------------------------+------------------------------------------------------------------------------------------------------------------
+ promotion_campaign_budget_type_check | CHECK ((type = ANY (ARRAY['spend'::text, 'usage'::text, 'use_by_attribute'::text, 'spend_by_attribute'::text])))
+(1 row)
+
+
+--- insert a spend_by_attribute budget row ---
+INSERT 0 1
+
+--- the row postgres stored ---
+        id         |        type        | limit | used |  attribute  
+-------------------+--------------------+-------+------+-------------
+ probudg_probe_sba | spend_by_attribute |    10 |    0 | customer_id
+(1 row)
+
+
+--- for contrast, a type the constraint does NOT allow ---
+psql:db-probe.sql:30: ERROR:  new row for relation "promotion_campaign_budget" violates check constraint "promotion_campaign_budget_type_check"
+DETAIL:  Failing row contains (probudg_probe_bogus, spend_by_moonphase, camp_probe, null, null, 0, {"value": "0"}, 2026-10-12 19:38:28.716213-07, 2026-10-12 19:38:28.716213-07, null, null).

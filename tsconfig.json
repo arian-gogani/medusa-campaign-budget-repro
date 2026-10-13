@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "experimentalDecorators": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@medusajs/framework/utils": ["./shim/framework-utils.ts"],
+      "@medusajs/framework/types": ["./shim/empty.ts"],
+      "@medusajs/types": ["./shim/empty.ts"],
+      "@models": ["./shim/empty.ts"],
+      "@types": ["./shim/empty.ts"],
+      "bignumber.js": ["./node_modules/bignumber.js/bignumber.js"],
+      "@medusajs/deps/*": ["./shim/anything.cjs"],
+      "@mikro-orm/*": ["./shim/anything.cjs"],
+      "awilix": ["./shim/anything.cjs"],
+      "ulid": ["./shim/anything.cjs"],
+      "zod": ["./shim/anything.cjs"]
+    }
+  }
+}

@@ -1,0 +1,116 @@
+
+==============================================================================
+PART 0  the real registerUsage is loaded and runs
+==============================================================================
+registerUsage is obtained from PromotionModuleService.prototype, so the real
+@InjectTransactionManager() / @EmitEvents() / @MedusaContext() decorator
+stack from the clone is in place. Three checks that it is the real one:
+
+  method is a function on the prototype: function
+  trivial registration, limit 1000, one 50 adjustment: ACCEPT
+  budget row it wrote: [{"service":"promotion_campaign_budget","data":[{"id":"probudg_1","type":"spend","limit":1000,"used":"50","currency_code":"usd","attribute":"customer_id"}]}]
+  rows it locked FOR UPDATE: ["promotion_campaign_budget"]
+  raw SQL it issued: ["SET LOCAL lock_timeout = '3s'"]
+
+CONTROL: the transaction requirement at promotion-module.ts:349 is real.
+Same call with getTransactionContext() returning undefined:
+  REFUSE  unexpected_state: registerUsage must run inside a transaction to serialize concurrent usage registration.
+
+CONTROL: a genuinely exhausted budget is refused by registerUsage.
+  limit 100, used 100, one 50 adjustment: REFUSE  not_allowed: Promotion usage exceeds the budget limit.
+
+==============================================================================
+PART 1  rule A (compute) and rule B (register), same cart, side by side
+==============================================================================
+Same $300 of goods, same 50%-off-each promotion, same $100 or $1000 budget.
+The only difference between rows is whether the goods arrive as one line
+or three.
+
+rule A = getComputedActionsForItems, the function update-cart-promotions runs
+rule B = PromotionModuleService.registerUsage, the function complete-cart runs
+         fed the adjustments rule A produced, mapped the way
+         complete-cart.ts:592 maps them: { amount, code } per adjustment
+
+CART                        LIMIT  RULE A OUTPUT                  RULE A  FED TO B  RULE B  RULE B DETAIL                                         
+--------------------------  -----  -----------------------------  ------  --------  ------  ------------------------------------------------------
+3 x $100 lines, limit 1000  1000   discount=150 adj=3 exceeded=0  ACCEPT  3         ACCEPT  used -> 150                                           
+1 x $300 line,  limit 1000  1000   discount=150 adj=1 exceeded=0  ACCEPT  1         ACCEPT  used -> 150                                           
+3 x $100 lines, limit 100   100    discount=150 adj=3 exceeded=0  ACCEPT  3         REFUSE  not_allowed: Promotion usage exceeds the budget limit.
+1 x $300 line,  limit 100   100    discount=0 adj=0 exceeded=1    REFUSE  0         ACCEPT  used -> 0                                             
+
+Row 3 is the finding. $150 of discount against a $100 budget: rule A
+permits it when the cart is three lines, and rule B refuses the same
+$150. Row 4 is the same $150 of discount arriving as one line, where
+rule A refuses it. Row 4's rule B column is on an empty input, because
+rule A emitted no adjustments for it to register, so it carries no
+information; PART 1b fixes that by feeding rule B both shapes directly.
+
+==============================================================================
+PART 1b  rule B fed the same $150 as 3 adjustments and as 1
+==============================================================================
+This is the half the earlier pass quoted instead of running. The point
+is that rule B returns the same verdict for both shapes.
+
+ADJUSTMENTS FED TO registerUsage  LIMIT  RULE B  DETAIL                                                
+--------------------------------  -----  ------  ------------------------------------------------------
+3 adjustments of 50               1000   ACCEPT  used -> 150                                           
+1 adjustment of 150               1000   ACCEPT  used -> 150                                           
+3 adjustments of 50               100    REFUSE  not_allowed: Promotion usage exceeds the budget limit.
+1 adjustment of 150               100    REFUSE  not_allowed: Promotion usage exceeds the budget limit.
+
+Rule B does not care how the $150 is split. Rule A does. That is the
+disagreement, with both halves executed.
+
+==============================================================================
+PART 2  what each rule compares, for the 3-line cart at limit 100
+==============================================================================
+Rule A, per item, with `used` read from the budget row each time:
+  item=i1  amount=50  budget.used at the time=0  -> gt(50, 100) = false
+  item=i2  amount=50  budget.used at the time=0  -> gt(50, 100) = false
+  item=i3  amount=50  budget.used at the time=0  -> gt(50, 100) = false
+  budget.used after rule A ran: 0
+
+Rule B, over the same three adjustments, accumulating:
+  registerUsage: REFUSE  not_allowed: Promotion usage exceeds the budget limit.
+  budget.used when it stopped: 100
+  the accumulation it was doing, recomputed with the same MathBN:
+  amount=50  running used=50  -> gt(50, 100) = false
+  amount=50  running used=100  -> gt(100, 100) = false
+  amount=50  running used=150  -> gt(150, 100) = true
+
+==============================================================================
+PART 3  what was executed and what was replaced
+==============================================================================
+EXECUTED, from the clone, unmodified:
+  packages/modules/promotion/src/utils/compute-actions/line-items.ts
+  packages/modules/promotion/src/utils/compute-actions/usage.ts
+  packages/modules/promotion/src/services/promotion-module.ts  registerUsage
+  packages/core/utils/src/totals/math.ts                       MathBN
+  packages/core/utils/src/modules-sdk/decorators/*.ts          the decorator stack
+  packages/core/utils/src/common/errors.ts                     MedusaError
+
+REPLACED, none of it arithmetic:
+  this.listActivePromotions_          -> returns the fixture rows
+  this.promotionService_.update       -> recorder
+  this.campaignBudgetService_.update  -> recorder
+  this.campaignBudgetUsageService_.*  -> recorder
+  the knex transaction context        -> records SET LOCAL / FOR UPDATE, returns []
+  MedusaService(...)                  -> inert base class with a no-op emitEvents_
+  @models                             -> inert markers
+
+==============================================================================
+PART 4  ADJACENT OBSERVATION, a different defect, printed for honesty
+==============================================================================
+`max_quantity` under allocation EACH is applied within one line item.
+Three lines of quantity 1 and one line of quantity 3 are the same goods
+to a customer and not the same discount to the compute path.
+
+No campaign budget at all on the promotion, so no budget guard runs:
+  3 lines, qty 1, $100 each    -> discount=150    adjustments=3
+  1 line,  qty 3, $300         -> discount=50     adjustments=1
+  1 line,  qty 1, $300         -> discount=150    adjustments=1
+
+That spread is not the budget defect and is not claimed as part of it.
+It is printed because it is the reason the PART 1 pair uses a quantity-1
+line of $300 rather than a quantity-3 line, and because it needs its own
+pass before anything is said about it.

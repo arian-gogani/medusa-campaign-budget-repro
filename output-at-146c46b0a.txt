@@ -1,0 +1,69 @@
+
+==============================================================================
+PART 1  computeActionForBudgetExceeded(promotion, amount)
+==============================================================================
+A $1,000 discount is offered against budgets whose limit is stated below.
+used = 0 in every row. PERMIT means the function returned no action.
+
+BUDGET TYPE          LIMIT        VERDICT   (discount offered: 1000)
+spend                10           REFUSE  (campaignBudgetExceeded)
+spend                100000       PERMIT
+usage                10           PERMIT
+use_by_attribute     10           PERMIT
+spend_by_attribute   0.5          REFUSE  (campaignBudgetExceeded)
+spend_by_attribute   1            PERMIT
+spend_by_attribute   10           PERMIT
+spend_by_attribute   100000       PERMIT
+spend_by_attribute   0            PERMIT
+spend_by_attribute   null         PERMIT
+spend                0            PERMIT
+spend                null         PERMIT
+
+Same guard, but the budget is already fully consumed (used = limit):
+BUDGET TYPE          LIMIT   USED    VERDICT
+spend                100     100     REFUSE  (campaignBudgetExceeded)
+usage                100     100     REFUSE  (campaignBudgetExceeded)
+spend_by_attribute   100     100     REFUSE  (campaignBudgetExceeded)
+
+==============================================================================
+PART 2  getComputedActionsForItems: a cart of 3 x $100 items, 50% off each
+==============================================================================
+
+CONTROL: ordinary inputs, budget comfortably large
+control: spend, limit 1000         budget=spend               limit=1000     used=0     -> discount=150    adjustments=3 exceeded=0
+
+CONTROL: the guard refuses when it is asked in the unit it understands
+control: spend, limit 40           budget=spend               limit=40       used=0     -> discount=0      adjustments=0 exceeded=3
+control: spend, limit 100 used 60  budget=spend               limit=100      used=60    -> discount=0      adjustments=0 exceeded=3
+control: usage, limit 0.5          budget=usage               limit=0.5      used=0     -> discount=0      adjustments=0 exceeded=3
+
+DEFECT 1: spend_by_attribute budget never binds
+spend_by_attribute, limit 10       budget=spend_by_attribute  limit=10       used=0     -> discount=150    adjustments=3 exceeded=0
+spend_by_attribute, limit 1        budget=spend_by_attribute  limit=1        used=0     -> discount=150    adjustments=3 exceeded=0
+spend_by_attribute, limit 0        budget=spend_by_attribute  limit=0        used=0     -> discount=150    adjustments=3 exceeded=0
+spend_by_attribute, limit 0.5      budget=spend_by_attribute  limit=0.5      used=0     -> discount=0      adjustments=0 exceeded=3
+
+DEFECT 2: a SPEND budget is checked per item against a `used` that never advances
+Same $300 of goods, same 50%-off promotion, same $150 of discount, same $100 budget.
+The only difference is whether the goods arrive as one line or three.
+3 x $100 lines, limit 1000         budget=spend               limit=1000     used=0     -> discount=150    adjustments=3 exceeded=0
+1 x $300 line,  limit 1000         budget=spend               limit=1000     used=0     -> discount=150    adjustments=1 exceeded=0
+3 x $100 lines, limit 100          budget=spend               limit=100      used=0     -> discount=150    adjustments=3 exceeded=0
+1 x $300 line,  limit 100          budget=spend               limit=100      used=0     -> discount=0      adjustments=0 exceeded=1
+
+DEFECT 3 (shape): one code reported exhausted AND adjusted in the same result
+[
+  {
+    "action": "campaignBudgetExceeded",
+    "code": "SAVE"
+  },
+  {
+    "action": "addItemAdjustment",
+    "item": "small",
+    "amount": "10",
+    "code": "SAVE"
+  }
+]
+
+limit 0 on a plain spend budget, for comparison with the control above:
+spend, limit 0                     budget=spend               limit=0        used=0     -> discount=150    adjustments=3 exceeded=0
